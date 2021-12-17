@@ -14,6 +14,7 @@ import hudson.tasks.BuildStepMonitor;
 import hudson.tasks.Notifier;
 import hudson.tasks.Publisher;
 import hudson.util.FormValidation;
+import java.io.BufferedReader;
 import jenkins.model.JenkinsLocationConfiguration;
 import nz.co.jammehcow.jenkinsdiscord.exception.WebhookException;
 import nz.co.jammehcow.jenkinsdiscord.util.EmbedDescription;
@@ -21,6 +22,7 @@ import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
 
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.util.Map;
 
 /**
@@ -285,8 +287,13 @@ public class WebhookPublisher extends Notifier {
         );
         wh.setStatus(statusColor);
 
-        if (this.enableFooterInfo)
-            wh.setFooter("Jenkins v" + build.getHudsonVersion() + ", " + getDescriptor().getDisplayName() + " v" + getDescriptor().getVersion());
+        if (this.enableFooterInfo) {
+            int nbWarn = countWarningsInLog(build);
+            if(nbWarn > 0) {
+                wh.setFooter(String.format("Warnings in log : %d", nbWarn));
+            }
+            //wh.setFooter("Jenkins v" + build.getHudsonVersion() + ", " + getDescriptor().getDisplayName() + " v" + getDescriptor().getVersion());
+        }
 
         try {
             listener.getLogger().println("Sending notification to Discord.");
@@ -298,6 +305,21 @@ public class WebhookPublisher extends Notifier {
         return true;
     }
 
+    private int countWarningsInLog(AbstractBuild build) throws IOException {
+      int countWarn = 0;
+      try (BufferedReader br =
+        new BufferedReader(new InputStreamReader(build.getLogInputStream()))) {
+       String line;
+       while ((line = br.readLine()) != null) {
+        if (line.contains("Warning:")) {
+         countWarn++;
+        }
+       }
+      }
+     return countWarn;
+    }
+
+    @Override
     public BuildStepMonitor getRequiredMonitorService() {
         return BuildStepMonitor.NONE;
     }
