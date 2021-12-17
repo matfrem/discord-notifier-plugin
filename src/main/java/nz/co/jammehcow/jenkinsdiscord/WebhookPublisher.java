@@ -23,7 +23,11 @@ import org.kohsuke.stapler.QueryParameter;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.charset.Charset;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.apache.commons.codec.Charsets;
 
 /**
  * Author: jammehcow.
@@ -39,6 +43,7 @@ public class WebhookPublisher extends Notifier {
     private final String customAvatarUrl;
     private final String customUsername;
     private final boolean sendOnStateChange;
+    private final String warnIgnoreRegex;
     private boolean enableUrlLinking;
     private final boolean enableArtifactList;
     private final boolean enableFooterInfo;
@@ -61,6 +66,7 @@ public class WebhookPublisher extends Notifier {
             boolean enableUrlLinking,
             boolean enableArtifactList,
             boolean enableFooterInfo,
+            String warnIgnoreRegex,
             boolean showChangeset,
             boolean sendLogFile,
             boolean sendStartNotification
@@ -71,6 +77,7 @@ public class WebhookPublisher extends Notifier {
         this.enableUrlLinking = enableUrlLinking;
         this.enableArtifactList = enableArtifactList;
         this.enableFooterInfo = enableFooterInfo;
+        this.warnIgnoreRegex = warnIgnoreRegex;
         this.showChangeset = showChangeset;
         this.branchName = branchName;
         this.statusTitle = statusTitle;
@@ -123,6 +130,10 @@ public class WebhookPublisher extends Notifier {
 
     public boolean isEnableFooterInfo() {
         return this.enableFooterInfo;
+    }
+
+    public String getWarnIgnoreRegex() {
+        return this.warnIgnoreRegex;
     }
 
     public boolean isShowChangeset() {
@@ -288,7 +299,7 @@ public class WebhookPublisher extends Notifier {
         wh.setStatus(statusColor);
 
         if (this.enableFooterInfo) {
-            int nbWarn = countWarningsInLog(build);
+            int nbWarn = countWarningsInLog(build, this.warnIgnoreRegex);
             if(nbWarn > 0) {
                 wh.setFooter(String.format("Warnings in log : %d", nbWarn));
             }
@@ -305,18 +316,31 @@ public class WebhookPublisher extends Notifier {
         return true;
     }
 
-    private int countWarningsInLog(AbstractBuild build) throws IOException {
-      int countWarn = 0;
-      try (BufferedReader br =
-        new BufferedReader(new InputStreamReader(build.getLogInputStream()))) {
-       String line;
-       while ((line = br.readLine()) != null) {
-        if (line.contains("Warning:")) {
-         countWarn++;
+    private int countWarningsInLog(AbstractBuild build, String ignoreRegex) throws IOException {
+        int countWarn = 0;
+
+        Pattern ptIgnore = null;
+        if (ignoreRegex != null && !ignoreRegex.isEmpty()) {
+            ptIgnore = Pattern.compile(ignoreRegex);
         }
-       }
-      }
-     return countWarn;
+
+        try (BufferedReader br
+                = new BufferedReader(new InputStreamReader(build.getLogInputStream(), Charsets.UTF_8))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                if (line.contains("Warning:")) {
+                    if (ptIgnore == null) {
+                        countWarn++;
+                    } else {
+                        Matcher matchIgnore = ptIgnore.matcher(line);
+                        if (matchIgnore == null || !matchIgnore.find()) {
+                            countWarn++;
+                        }
+                    }
+                }
+            }
+        }
+        return countWarn;
     }
 
     @Override
